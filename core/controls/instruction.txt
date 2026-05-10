@@ -1,0 +1,1 @@
+directory responsible by the management of controls of both players
