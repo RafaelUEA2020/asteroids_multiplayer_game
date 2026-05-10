@@ -24,7 +24,15 @@ class Game:
     def __init__(self) -> None:
         pg.mixer.pre_init(C.AUDIO_FREQUENCY, C.AUDIO_SIZE, C.AUDIO_CHANNELS, C.AUDIO_BUFFER)
         pg.init()
-        pg.mixer.init()
+        try:
+            pg.mixer.init()
+        except pg.error:
+            import os
+            os.environ["SDL_AUDIODRIVER"] = "dummy"
+            try:
+                pg.mixer.init()
+            except pg.error:
+                pass
 
         self.screen = pg.display.set_mode((C.WIDTH, C.HEIGHT))
         pg.display.set_caption("Asteroids")
@@ -111,11 +119,13 @@ class Game:
             return
 
         self.renderer.draw_world(self.world)
+        ship = self.world.get_ship(C.LOCAL_PLAYER_ID)
         self.renderer.draw_hud(
             self.world.scores.get(C.LOCAL_PLAYER_ID, 0),
             self.world.lives.get(C.LOCAL_PLAYER_ID, 0),
             self.world.wave,
             self.scene,
+            shield=ship.shield if ship else 0.0,
         )
         pg.display.flip()
 

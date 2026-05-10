@@ -74,6 +74,11 @@ FONT_NAME = "consolas"
 
 RANDOM_SEED = None
 
+SHIELD_PICKUP_RADIUS = 12
+SHIELD_DURATION = 10.0
+SHIELD_SPAWN_EVERY = 20.0
+SHIELD_COLOR = (100, 180, 255)
+
 # Paths (work from any execution directory).
 # config.py lives in core/, so we go one level up to the project root.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

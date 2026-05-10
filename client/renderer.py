@@ -1,9 +1,11 @@
 """Client-side rendering (pygame)."""
 
+import math
+
 import pygame as pg
 
 from core import config as C
-from core.entities import Asteroid, Bullet, Ship, UFO
+from core.entities import Asteroid, Bullet, Ship, UFO, ShieldPickup
 from core.scene import SceneState
 
 
@@ -27,6 +29,7 @@ class Renderer:
             Asteroid: self._draw_asteroid,
             Ship: self._draw_ship,
             UFO: self._draw_ufo,
+            ShieldPickup: self._draw_shield_pickup,
         }
 
     def clear(self) -> None:
@@ -45,6 +48,7 @@ class Renderer:
         lives: int,
         wave: int,
         state: SceneState,
+        shield: float = 0.0,
     ) -> None:
         if state != SceneState.PLAY:
             return
@@ -52,6 +56,13 @@ class Renderer:
         text = f"SCORE {score:06d}   LIVES {lives}   WAVE {wave}"
         label = self.font.render(text, True, self.config.WHITE)
         self.screen.blit(label, (10, 10))
+
+        if shield > 0.0:
+            secs = math.ceil(shield)
+            s_text = f"SHIELD {secs}s"
+            s_label = self.font.render(s_text, True, self.config.SHIELD_COLOR)
+            x = self.config.WIDTH // 2 - s_label.get_width() // 2
+            self.screen.blit(s_label, (x, 10))
 
     def draw_menu(self) -> None:
         self._draw_text(
@@ -139,3 +150,10 @@ class Renderer:
         cup = pg.Rect(0, 0, int(width * 0.5), int(height * 0.7))
         cup.center = (int(ufo.pos.x), int(ufo.pos.y - height * 0.3))
         pg.draw.ellipse(self.screen, self.config.WHITE, cup, width=1)
+
+    def _draw_shield_pickup(self, pickup: "ShieldPickup") -> None:
+        r = pickup.r + int(math.sin(pickup.pulse) * 3)
+        center = (int(pickup.pos.x), int(pickup.pos.y))
+        pg.draw.circle(self.screen, self.config.SHIELD_COLOR, center, r, width=2)
+        inner = max(2, r - 5)
+        pg.draw.circle(self.screen, self.config.SHIELD_COLOR, center, inner, width=1)

@@ -92,6 +92,7 @@ class Ship(pg.sprite.Sprite):
         self.cool = 0.0
         self.target_pos: Vec | None = None
         self.invuln = 0.0
+        self.shield = 0.0
         self.r = int(C.SHIP_RADIUS)
         self.rect = pg.Rect(0, 0, self.r * 2, self.r * 2)
 
@@ -150,6 +151,11 @@ class Ship(pg.sprite.Sprite):
             self.invuln -= dt
             if self.invuln < 0.0:
                 self.invuln = 0.0
+
+        if self.shield > 0.0:
+            self.shield -= dt
+            if self.shield < 0.0:
+                self.shield = 0.0
 
         self.pos += self.vel * dt
         self.pos = wrap_pos(self.pos)
@@ -313,3 +319,18 @@ class UFO(pg.sprite.Sprite):
         self.cool = float(rate)
 
         return Bullet(UFO_BULLET_OWNER, self.pos, vel, ttl=ttl)
+
+
+class ShieldPickup(pg.sprite.Sprite):
+    """Pickup that grants invincibility for SHIELD_DURATION seconds."""
+
+    def __init__(self, pos: Vec) -> None:
+        super().__init__()
+        self.pos = Vec(pos)
+        self.r = C.SHIELD_PICKUP_RADIUS
+        self.pulse = 0.0
+        self.rect = pg.Rect(0, 0, self.r * 2, self.r * 2)
+
+    def update(self, dt: float) -> None:
+        self.pulse = (self.pulse + dt * 3.0) % (math.pi * 2)
+        self.rect.center = (int(self.pos.x), int(self.pos.y))
