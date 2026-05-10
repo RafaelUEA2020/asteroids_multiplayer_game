@@ -87,3 +87,17 @@ SHIP_EXPLOSION = "ship_explosion.wav"
 THRUST_LOOP = "thrust_loop.wav"
 UFO_SIREN_BIG = "ufo_siren_big.wav"
 UFO_SIREN_SMALL = "ufo_siren_small.wav"
+
+PLAYER_DOWNED    = "player_downed.wav"
+RESCUE_COMPLETE  = "rescue_complete.wav"
+RESCUE_FAILED    = "rescue_failed.wav"
+RESCUE_BEEP      = "rescue_beep.wav"
+
+RESCUE_WINDOW        = 5.0   # segundos para o aliado chegar
+RESCUE_RANGE         = 60    # pixels de distância para ativar resgate
+RESCUE_TIME_NEEDED   = 1.8   # segundos de proximidade para completar
+RESCUE_PROGRESS_DECAY = 0.4  # velocidade de decay se aliado sair (0 = congela)
+RESCUE_SCORE_BONUS   = 500   # pontos para quem resgatou
+
+RESCUE_BEEP_INTERVAL_MAX = 1.0
+RESCUE_BEEP_INTERVAL_MIN = 0.2

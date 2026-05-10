@@ -13,6 +13,7 @@ class AudioManager:
         self._thrust_ch = pg.mixer.Channel(1)
         self._sfx_ch = pg.mixer.Channel(2)
         self._ufo_ch = pg.mixer.Channel(3)
+        self._rescue_ch = pg.mixer.Channel(4)   # beep loop during downed
         self._ufo_siren_kind: str | None = None
 
     def play_events(self, events: list[str]) -> None:
@@ -25,6 +26,18 @@ class AudioManager:
                 self._sfx_ch.play(self.sounds.asteroid_explosion)
             elif ev == "ship_explosion":
                 self._sfx_ch.play(self.sounds.ship_explosion)
+            elif ev == "player_downed":
+                self._sfx_ch.play(self.sounds.player_downed)
+            elif ev == "rescue_beep":
+                # Only play if the sfx channel is free (avoid overlap spam)
+                if not self._rescue_ch.get_busy():
+                    self._rescue_ch.play(self.sounds.rescue_beep)
+            elif ev == "rescue_complete":
+                self._rescue_ch.stop()
+                self._sfx_ch.play(self.sounds.rescue_complete)
+            elif ev == "rescue_failed":
+                self._rescue_ch.stop()
+                self._sfx_ch.play(self.sounds.rescue_failed)
 
     def update_thrust(self, active: bool) -> None:
         if active:
@@ -46,23 +59,17 @@ class AudioManager:
             return
 
         self._ufo_ch.stop()
-        if kind == "small":
-            snd = self.sounds.ufo_siren_small
-        else:
-            snd = self.sounds.ufo_siren_big
-
+        snd = self.sounds.ufo_siren_small if kind == "small" else self.sounds.ufo_siren_big
         self._ufo_ch.play(snd, loops=-1)
         self._ufo_siren_kind = kind
 
     def stop_all(self) -> None:
-        if self._thrust_ch.get_busy():
-            self._thrust_ch.stop()
-        if self._ufo_ch.get_busy():
-            self._ufo_ch.stop()
+        self._thrust_ch.stop()
+        self._ufo_ch.stop()
+        self._rescue_ch.stop()
         self._ufo_siren_kind = None
 
     def _choose_ufo_siren(self, ufos: list) -> str | None:
         if not ufos:
             return None
-        has_small = any(getattr(u, "small", False) for u in ufos)
-        return "small" if has_small else "big"
+        return "small" if any(getattr(u, "small", False) for u in ufos) else "big"

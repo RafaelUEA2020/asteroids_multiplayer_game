@@ -1,9 +1,4 @@
-"""Game loop and scenes (menu, play, game over).
-
-- InputMapper converts keyboard input into PlayerCommand.
-- World updates the simulation and generates events (strings) for Game.
-- Game handles audio and screen transitions (low coupling).
-"""
+"""Game loop and scenes — co-op."""
 
 import sys
 
@@ -13,7 +8,7 @@ from core import config as C
 from core.scene import SceneState
 from client.audio import load_sounds
 from client.audio_manager import AudioManager
-from client.controls import InputMapper
+from client.input_hub import InputHub
 from client.renderer import Renderer
 from core.world import World
 
@@ -27,7 +22,7 @@ class Game:
         pg.mixer.init()
 
         self.screen = pg.display.set_mode((C.WIDTH, C.HEIGHT))
-        pg.display.set_caption("Asteroids")
+        pg.display.set_caption("Asteroids — Co-op")
 
         self.clock = pg.time.Clock()
         self.running = True
@@ -42,7 +37,7 @@ class Game:
 
         self.scene = SceneState.MENU
         self.world = World()
-        self.input_mapper = InputMapper()
+        self.input_hub = InputHub()
 
         self.sounds = load_sounds(C.SOUND_PATH)
         self.audio = AudioManager(self.sounds)
@@ -64,28 +59,24 @@ class Game:
             if event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
                 self._quit()
 
+            self.input_hub.handle_event(event)
             if self.scene == SceneState.MENU:
-                if event.type == pg.KEYDOWN:
+                if event.type in (pg.KEYDOWN, pg.JOYBUTTONDOWN):
                     self.scene = SceneState.PLAY
                 continue
 
             if self.scene == SceneState.GAME_OVER:
-                if event.type == pg.KEYDOWN:
+                if event.type in (pg.KEYDOWN, pg.JOYBUTTONDOWN):
                     self.world.reset()
                     self.scene = SceneState.PLAY
                 continue
 
-            if self.scene == SceneState.PLAY:
-                self.input_mapper.handle_event(event)
 
     def _update(self, dt: float) -> None:
         if self.scene != SceneState.PLAY:
             return
 
-        keys = pg.key.get_pressed()
-        cmd = self.input_mapper.build_command(keys)
-        commands = {C.LOCAL_PLAYER_ID: cmd}
-
+        commands = self.input_hub.build_commands()
         self.world.update(dt, commands)
 
         if self.world.game_over:
@@ -93,7 +84,8 @@ class Game:
             self.scene = SceneState.GAME_OVER
             return
 
-        self.audio.update_thrust(cmd.thrust)
+        any_thrust = any(cmd.thrust for cmd in commands.values())
+        self.audio.update_thrust(any_thrust)
         self.audio.update_ufo_siren(list(self.world.ufos))
         self.audio.play_events(self.world.events)
 
@@ -101,7 +93,7 @@ class Game:
         self.renderer.clear()
 
         if self.scene == SceneState.MENU:
-            self.renderer.draw_menu()
+            self.renderer.draw_menu(self.input_hub.input_summary())
             pg.display.flip()
             return
 
@@ -110,12 +102,18 @@ class Game:
             pg.display.flip()
             return
 
+        # Play scene
         self.renderer.draw_world(self.world)
+        self.renderer.draw_rescue_overlay(
+            self.world.ships,
+            self.world.downed,
+        )
         self.renderer.draw_hud(
-            self.world.scores.get(C.LOCAL_PLAYER_ID, 0),
-            self.world.lives.get(C.LOCAL_PLAYER_ID, 0),
+            self.world.scores,
+            self.world.lives,
             self.world.wave,
             self.scene,
+            downed=self.world.downed,
         )
         pg.display.flip()
 
