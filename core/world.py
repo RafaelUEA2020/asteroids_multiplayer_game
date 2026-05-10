@@ -1,4 +1,12 @@
-"""Game systems (World, waves, score)."""
+"""Game systems (World, waves, score,coop).
+
+Player lifecycle
+----------------
+ALIVE  → hit by asteroid/UFO bullet → DOWNED  (if ally alive)
+                                     → _ship_die (if alone)
+DOWNED → ally rescues in time        → ALIVE   (no life lost)
+       → timer expires               → _ship_die (life lost, respawn)
+"""
 
 import math
 from random import uniform
@@ -10,6 +18,7 @@ from core import config as C
 from core.collisions import CollisionManager
 from core.commands import PlayerCommand
 from core.entities import Asteroid, Ship, UFO
+from core.rescue import DownedState
 from core.utils import Vec, rand_edge_pos
 
 PlayerId = int
@@ -35,6 +44,9 @@ class World:
         self.wave = 0
         self.wave_cool = float(C.WAVE_DELAY)
         self.ufo_timer = float(C.UFO_SPAWN_EVERY)
+        # Rescue state — only players currently downed appear here
+        self.downed: Dict[PlayerId, DownedState] = {}
+        self._beep_timers: Dict[PlayerId, float] = {}
 
         self.events: list[str] = []
         self._collision_mgr = CollisionManager()
@@ -51,7 +63,10 @@ class World:
         self.__init__()
 
     def spawn_player(self, player_id: PlayerId) -> None:
-        pos = Vec(C.WIDTH / 2, C.HEIGHT / 2)
+        if player_id in self.ships:
+            return
+        offset_x = (player_id - 1) * 40
+        pos = Vec(C.WIDTH / 2 + offset_x, C.HEIGHT / 2)
         ship = Ship(player_id, pos)
         ship.invuln = float(C.SAFE_SPAWN_TIME)
 
@@ -106,12 +121,17 @@ class World:
         if self.game_over:
             return
 
+        for player_id in commands_by_player_id:
+            if player_id not in self.ships:
+                self.spawn_player(player_id)
+
         self._apply_commands(dt, commands_by_player_id)
         self.all_sprites.update(dt)
 
         self._update_ufos(dt)
         self._update_timers(dt)
         self._handle_collisions()
+        self._update_rescue(dt)
         self._maybe_start_next_wave(dt)
 
     def _apply_commands(
@@ -120,6 +140,9 @@ class World:
         commands_by_player_id: Dict[PlayerId, PlayerCommand],
     ) -> None:
         for player_id, cmd in commands_by_player_id.items():
+            if player_id in self.downed:
+                continue   # downed players cannot act
+
             ship = self.get_ship(player_id)
             if ship is None:
                 continue
@@ -143,7 +166,6 @@ class World:
             if not ufo.alive():
                 continue
 
-            ufo.target_pos = self._get_nearest_ship_pos(ufo.pos)
             bullet = ufo.try_fire()
             if bullet is not None:
                 self.bullets.add(bullet)
@@ -194,13 +216,123 @@ class World:
             self.spawn_asteroid(pos, vel, size)
 
         for player_id in result.ship_deaths:
+            if player_id in self.downed:
+                continue   # already downed, ignore duplicate hit
             ship = self.get_ship(player_id)
             if ship is not None:
-                self._ship_die(ship)
+                self._on_ship_hit(ship)
+    def _on_ship_hit(self, ship: Ship) -> None:
+        pid = ship.player_id
+        if self._can_be_downed(pid):
+            self._ship_go_downed(ship)
+        else:
+            self._ship_die(ship)
+
+    def _can_be_downed(self, player_id: PlayerId) -> bool:
+        for pid in self.ships:
+            if pid == player_id:
+                continue
+            if pid not in self.downed and self.lives.get(pid, 0) > 0:
+                return True
+        return False
+
+    def _ship_go_downed(self, ship: Ship) -> None:
+        pid = ship.player_id
+        ship.vel.xy = (0, 0)
+        ship.invuln = 999.0   # immune while downed
+
+        self.downed[pid] = DownedState(
+            player_id=pid,
+            timer=float(C.RESCUE_WINDOW),
+        )
+        self._beep_timers[pid] = 0.0   # fire first beep immediately
+
+        self.events.append("player_downed")
+
+    def _update_rescue(self, dt: float) -> None:
+        for pid, ds in list(self.downed.items()):
+            ds.timer -= dt
+
+            downed_ship = self.ships.get(pid)
+            if downed_ship is None:
+                self.downed.pop(pid, None)
+                continue
+
+            # Find rescuer
+            rescuer_found = False
+            for ally_id, ally_ship in self.ships.items():
+                if ally_id == pid or ally_id in self.downed:
+                    continue
+                dist = (ally_ship.pos - downed_ship.pos).length()
+                if dist <= C.RESCUE_RANGE:
+                    rescuer_found = True
+                    ds.rescuer_id = ally_id
+                    ds.rescue_progress += dt / C.RESCUE_TIME_NEEDED
+                    ds.rescue_progress  = min(ds.rescue_progress, 1.0)
+                    break
+
+            if not rescuer_found:
+                ds.rescuer_id = None
+                if C.RESCUE_PROGRESS_DECAY > 0:
+                    ds.rescue_progress = max(
+                        0.0,
+                        ds.rescue_progress - C.RESCUE_PROGRESS_DECAY * dt,
+                    )
+
+            # Urgency beep
+            self._tick_rescue_beep(pid, ds, dt)
+
+            # Resolution
+            if ds.rescue_progress >= 1.0:
+                self._complete_rescue(pid, ds.rescuer_id)
+            elif ds.timer <= 0.0:
+                self._fail_rescue(pid)
+
+    def _tick_rescue_beep(
+        self,
+        pid: PlayerId,
+        ds: DownedState,
+        dt: float,
+    ) -> None:
+        ratio    = max(0.0, ds.timer / C.RESCUE_WINDOW)
+        interval = (
+            C.RESCUE_BEEP_INTERVAL_MIN
+            + (C.RESCUE_BEEP_INTERVAL_MAX - C.RESCUE_BEEP_INTERVAL_MIN) * ratio
+        )
+        self._beep_timers[pid] -= dt
+        if self._beep_timers[pid] <= 0.0:
+            self.events.append("rescue_beep")
+            self._beep_timers[pid] = interval
+
+    def _complete_rescue(
+        self,
+        pid: PlayerId,
+        rescuer_id: PlayerId | None,
+    ) -> None:
+        ship = self.ships[pid]
+        ship.vel.xy = (0, 0)
+        ship.invuln = float(C.SAFE_SPAWN_TIME)
+
+        self.downed.pop(pid, None)
+        self._beep_timers.pop(pid, None)
+
+        if rescuer_id is not None and rescuer_id in self.scores:
+            self.scores[rescuer_id] += C.RESCUE_SCORE_BONUS
+
+        self.events.append("rescue_complete")
+
+    def _fail_rescue(self, pid: PlayerId) -> None:
+        self.downed.pop(pid, None)
+        self._beep_timers.pop(pid, None)
+
+        self.events.append("rescue_failed")
+        ship = self.ships.get(pid)
+        if ship is not None:
+            self._ship_die(ship)
 
     def _ship_die(self, ship: Ship) -> None:
         pid = ship.player_id
-        self.lives[pid] = self.lives[pid] - 1
+        self.lives[pid] -= 1
         ship.pos.xy = (C.WIDTH / 2, C.HEIGHT / 2)
         ship.vel.xy = (0, 0)
         ship.angle = -90.0
