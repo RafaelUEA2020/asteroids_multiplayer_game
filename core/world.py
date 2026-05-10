@@ -9,7 +9,7 @@ import pygame as pg
 from core import config as C
 from core.collisions import CollisionManager
 from core.commands import PlayerCommand
-from core.entities import Asteroid, Ship, UFO
+from core.entities import Asteroid, Ship, UFO, ShieldPickup
 from core.utils import Vec, rand_edge_pos
 
 PlayerId = int
@@ -28,6 +28,7 @@ class World:
         self.bullets = pg.sprite.Group()
         self.asteroids = pg.sprite.Group()
         self.ufos = pg.sprite.Group()
+        self.shield_pickups = pg.sprite.Group()
         self.all_sprites = pg.sprite.Group()
 
         self.scores: Dict[PlayerId, int] = {}
@@ -35,6 +36,7 @@ class World:
         self.wave = 0
         self.wave_cool = float(C.WAVE_DELAY)
         self.ufo_timer = float(C.UFO_SPAWN_EVERY)
+        self.shield_timer = float(C.SHIELD_SPAWN_EVERY)
 
         self.events: list[str] = []
         self._collision_mgr = CollisionManager()
@@ -95,6 +97,12 @@ class World:
         self.ufos.add(ufo)
 
         self.all_sprites.add(ufo)
+
+    def _spawn_shield_pickup(self) -> None:
+        pos = Vec(uniform(50, C.WIDTH - 50), uniform(50, C.HEIGHT - 50))
+        pickup = ShieldPickup(pos)
+        self.shield_pickups.add(pickup)
+        self.all_sprites.add(pickup)
 
     def update(
         self,
@@ -170,6 +178,11 @@ class World:
             self.spawn_ufo()
             self.ufo_timer = float(C.UFO_SPAWN_EVERY)
 
+        self.shield_timer -= dt
+        if self.shield_timer <= 0.0:
+            self._spawn_shield_pickup()
+            self.shield_timer = float(C.SHIELD_SPAWN_EVERY)
+
     def _maybe_start_next_wave(self, dt: float) -> None:
         if self.asteroids:
             return
@@ -182,6 +195,7 @@ class World:
     def _handle_collisions(self) -> None:
         result = self._collision_mgr.resolve(
             self.ships, self.bullets, self.asteroids, self.ufos,
+            self.shield_pickups,
         )
 
         self.events.extend(result.events)
@@ -192,6 +206,12 @@ class World:
 
         for pos, vel, size in result.asteroids_to_spawn:
             self.spawn_asteroid(pos, vel, size)
+
+        for player_id in result.shields_collected:
+            ship = self.get_ship(player_id)
+            if ship is not None:
+                ship.invuln = float(C.SHIELD_DURATION)
+                ship.shield = float(C.SHIELD_DURATION)
 
         for player_id in result.ship_deaths:
             ship = self.get_ship(player_id)
@@ -205,6 +225,7 @@ class World:
         ship.vel.xy = (0, 0)
         ship.angle = -90.0
         ship.invuln = float(C.SAFE_SPAWN_TIME)
+        ship.shield = 0.0
 
         self.events.append("ship_explosion")
         if all(v <= 0 for v in self.lives.values()):

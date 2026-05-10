@@ -6,7 +6,7 @@ from random import uniform
 import pygame as pg
 
 from core import config as C
-from core.entities import Asteroid, Bullet, Ship, UFO, UFO_BULLET_OWNER, PlayerId
+from core.entities import Asteroid, Bullet, Ship, UFO, UFO_BULLET_OWNER, PlayerId, ShieldPickup
 from core.utils import Vec, rand_unit_vec
 
 
@@ -18,6 +18,7 @@ class CollisionResult:
     score_deltas: dict[PlayerId, int] = field(default_factory=dict)
     ship_deaths: list[PlayerId] = field(default_factory=list)
     asteroids_to_spawn: list[tuple[Vec, Vec, str]] = field(default_factory=list)
+    shields_collected: list[PlayerId] = field(default_factory=list)
 
 
 class CollisionManager:
@@ -29,6 +30,7 @@ class CollisionManager:
         bullets: pg.sprite.Group,
         asteroids: pg.sprite.Group,
         ufos: pg.sprite.Group,
+        shield_pickups: pg.sprite.Group | None = None,
     ) -> CollisionResult:
         result = CollisionResult()
         self._bullets_vs_asteroids(bullets, asteroids, result)
@@ -36,6 +38,8 @@ class CollisionManager:
         self._ufo_vs_asteroids(ufos, asteroids, result)
         self._ship_vs_asteroids(ships, asteroids, result)
         self._ship_vs_ufo_bullets(ships, bullets, result)
+        if shield_pickups is not None:
+            self._ship_vs_shields(ships, shield_pickups, result)
         return result
 
     def _bullets_vs_asteroids(
@@ -165,3 +169,15 @@ class CollisionManager:
             dirv = rand_unit_vec()
             speed = uniform(C.AST_VEL_MIN, C.AST_VEL_MAX) * C.AST_SPLIT_SPEED_MULT
             result.asteroids_to_spawn.append((pos, dirv * speed, new_size))
+
+    def _ship_vs_shields(
+        self,
+        ships: dict[PlayerId, Ship],
+        shield_pickups: pg.sprite.Group,
+        result: CollisionResult,
+    ) -> None:
+        for ship in ships.values():
+            for pickup in list(shield_pickups):
+                if (pickup.pos - ship.pos).length() < (pickup.r + ship.r):
+                    pickup.kill()
+                    result.shields_collected.append(ship.player_id)
