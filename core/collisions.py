@@ -16,6 +16,7 @@ class CollisionResult:
 
     events: list[str] = field(default_factory=list)
     score_deltas: dict[PlayerId, int] = field(default_factory=dict)
+    asteroid_destroys: dict[PlayerId, int] = field(default_factory=dict)
     ship_deaths: list[PlayerId] = field(default_factory=list)
     asteroids_to_spawn: list[tuple[Vec, Vec, str]] = field(default_factory=list)
 
@@ -153,6 +154,9 @@ class CollisionManager:
             result.score_deltas[scorer_id] = (
                 result.score_deltas.get(scorer_id, 0)
                 + C.AST_SIZES[ast.size]["score"]
+            )
+            result.asteroid_destroys[scorer_id] = (
+                result.asteroid_destroys.get(scorer_id, 0) + 1
             )
 
         split = C.AST_SIZES[ast.size]["split"]

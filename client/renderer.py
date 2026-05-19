@@ -6,6 +6,7 @@ from core import config as C
 from core.entities import Asteroid, Bullet, Ship, UFO
 from core.rescue import DownedState
 from core.scene import SceneState
+from core.stats import PlayerStats
 from client.colors import player_color
 
 
@@ -60,9 +61,18 @@ class Renderer:
         wave: int,
         state: SceneState,
         downed: dict[int, DownedState] | None = None,
+        team_score: int = 0,
+        player_stats: dict[int, PlayerStats] | None = None,
     ) -> None:
         if state != SceneState.PLAY:
             return
+
+        team_label = self.font.render(
+            f"Equipe: {team_score:06d} pts",
+            True,
+            self.config.WHITE,
+        )
+        self.screen.blit(team_label, (10, 10))
 
         # Wave — centred top
         wave_label = self.font.render(f"WAVE {wave}", True, self.config.WHITE)
@@ -72,16 +82,19 @@ class Renderer:
         )
         # Per-player panels
         positions = [
-            (10, 10),
-            (self.config.WIDTH - 230, 10),
             (10, 38),
-            (self.config.WIDTH - 230, 38),
+            (self.config.WIDTH - 310, 38),
+            (10, 66),
+            (self.config.WIDTH - 310, 66),
         ]
 
         for idx, pid in enumerate(sorted(scores.keys())):
             color = player_color(pid)
             score = scores.get(pid, 0)
             life  = lives.get(pid, 0)
+            asteroids = 0
+            if player_stats and pid in player_stats:
+                asteroids = player_stats[pid].asteroids_destroyed
 
             is_downed = downed and pid in downed
             if is_downed:
@@ -92,6 +105,7 @@ class Renderer:
             else:
                 text = f"P{pid}  {score:06d}  ♥ {life}"
 
+            text = f"{text}  A {asteroids}"
             label = self.font.render(text, True, color)
             pos   = positions[idx] if idx < len(positions) else (10, 10 + idx * 28)
             self.screen.blit(label, pos)
@@ -105,19 +119,56 @@ class Renderer:
             (self.config.WIDTH // 2 - label.get_width() // 2, 410),
         )
 
-    def draw_game_over(self) -> None:
+    def draw_game_over(
+        self,
+        team_score: int = 0,
+        player_stats: dict[int, PlayerStats] | None = None,
+    ) -> None:
         self._draw_text(
             self.big,
-            "GAME OVER",
+            "FIM DE JOGO",
             self.config.WIDTH // 2 - 170,
-            260,
+            110,
         )
+        self._draw_text(
+            self.font,
+            f"Pontuacao da Equipe: {team_score}",
+            self.config.WIDTH // 2 - 170,
+            210,
+        )
+        if player_stats:
+            self._draw_player_stats(player_stats)
         self._draw_text(
             self.font,
             "Press any key",
             self.config.WIDTH // 2 - 170,
-            340,
+            620,
         )
+
+    def _draw_player_stats(self, player_stats: dict[int, PlayerStats]) -> None:
+        panel_width = 350
+        left = self.config.WIDTH // 2 - panel_width - 20
+        positions = [
+            (left, 285),
+            (self.config.WIDTH // 2 + 20, 285),
+            (left, 455),
+            (self.config.WIDTH // 2 + 20, 455),
+        ]
+
+        for idx, pid in enumerate(sorted(player_stats.keys())):
+            stats = player_stats[pid]
+            x, y = positions[idx] if idx < len(positions) else (left, 285 + idx * 170)
+            color = player_color(pid)
+            self._draw_text(self.font, f"Player {pid}", x, y, color)
+            lines = [
+                f"Asteroides destruidos: {stats.asteroids_destroyed}",
+                f"Pontos contribuidos: {stats.points_contributed}",
+                f"Mortes: {stats.deaths}",
+                f"Revives realizados: {stats.revives}",
+                f"Tempo vivo: {stats.time_alive:.1f}s",
+            ]
+            for line_idx, line in enumerate(lines, start=1):
+                self._draw_text(self.font, line, x, y + line_idx * 26)
 
     def _draw_downed_ship(self, ship: Ship, ds: DownedState) -> None:
         """Flickering ship + countdown arc + rescue-progress arc."""
