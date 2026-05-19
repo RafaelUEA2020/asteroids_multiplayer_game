@@ -19,6 +19,7 @@ from core.collisions import CollisionManager
 from core.commands import PlayerCommand
 from core.entities import Asteroid, Ship, UFO
 from core.rescue import DownedState
+from core.stats import PlayerStats, StatsManager
 from core.utils import Vec, rand_edge_pos
 
 PlayerId = int
@@ -39,6 +40,7 @@ class World:
         self.ufos = pg.sprite.Group()
         self.all_sprites = pg.sprite.Group()
 
+        self.stats = StatsManager()
         self.scores: Dict[PlayerId, int] = {}
         self.lives: Dict[PlayerId, int] = {}
         self.wave = 0
@@ -54,6 +56,14 @@ class World:
         self.game_over = False
 
         self.spawn_player(C.LOCAL_PLAYER_ID)
+
+    @property
+    def team_score(self) -> int:
+        return self.stats.team_score
+
+    @property
+    def player_stats(self) -> dict[PlayerId, PlayerStats]:
+        return self.stats.players
 
     def begin_frame(self) -> None:
         self.events.clear()
@@ -71,7 +81,8 @@ class World:
         ship.invuln = float(C.SAFE_SPAWN_TIME)
 
         self.ships[player_id] = ship
-        self.scores[player_id] = 0
+        self.stats.ensure_player(player_id)
+        self._sync_scores()
         self.lives[player_id] = C.START_LIVES
         self.all_sprites.add(ship)
 
@@ -126,6 +137,7 @@ class World:
                 self.spawn_player(player_id)
 
         self._apply_commands(dt, commands_by_player_id)
+        self._update_alive_time(dt)
         self.all_sprites.update(dt)
 
         self._update_ufos(dt)
@@ -149,9 +161,7 @@ class World:
 
             if cmd.hyperspace:
                 ship.hyperspace()
-                self.scores[player_id] = max(
-                    0, self.scores[player_id] - C.HYPERSPACE_COST
-                )
+                self.stats.spend_team_score(C.HYPERSPACE_COST)
 
             bullet = ship.apply_command(cmd, dt, self.bullets)
             if bullet is not None:
@@ -209,8 +219,14 @@ class World:
         self.events.extend(result.events)
 
         for player_id, delta in result.score_deltas.items():
-            if player_id in self.scores:
-                self.scores[player_id] += delta
+            if player_id in self.ships:
+                self.stats.add_score(player_id, delta)
+
+        for player_id, count in result.asteroid_destroys.items():
+            if player_id in self.ships:
+                self.stats.record_asteroids_destroyed(player_id, count)
+
+        self._sync_scores()
 
         for pos, vel, size in result.asteroids_to_spawn:
             self.spawn_asteroid(pos, vel, size)
@@ -316,8 +332,10 @@ class World:
         self.downed.pop(pid, None)
         self._beep_timers.pop(pid, None)
 
-        if rescuer_id is not None and rescuer_id in self.scores:
-            self.scores[rescuer_id] += C.RESCUE_SCORE_BONUS
+        if rescuer_id is not None and rescuer_id in self.ships:
+            self.stats.add_score(rescuer_id, C.RESCUE_SCORE_BONUS)
+            self.stats.record_revive(rescuer_id)
+            self._sync_scores()
 
         self.events.append("rescue_complete")
 
@@ -333,6 +351,7 @@ class World:
     def _ship_die(self, ship: Ship) -> None:
         pid = ship.player_id
         self.lives[pid] -= 1
+        self.stats.record_death(pid)
         ship.pos.xy = (C.WIDTH / 2, C.HEIGHT / 2)
         ship.vel.xy = (0, 0)
         ship.angle = -90.0
@@ -341,3 +360,14 @@ class World:
         self.events.append("ship_explosion")
         if all(v <= 0 for v in self.lives.values()):
             self.game_over = True
+
+    def _update_alive_time(self, dt: float) -> None:
+        for player_id in self.ships:
+            if player_id in self.downed:
+                continue
+            if self.lives.get(player_id, 0) <= 0:
+                continue
+            self.stats.add_alive_time(player_id, dt)
+
+    def _sync_scores(self) -> None:
+        self.scores = self.stats.points_by_player()

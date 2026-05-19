@@ -98,7 +98,10 @@ class Game:
             return
 
         if self.scene == SceneState.GAME_OVER:
-            self.renderer.draw_game_over()
+            self.renderer.draw_game_over(
+                self.world.team_score,
+                self.world.player_stats,
+            )
             pg.display.flip()
             return
 
@@ -114,6 +117,8 @@ class Game:
             self.world.wave,
             self.scene,
             downed=self.world.downed,
+            team_score=self.world.team_score,
+            player_stats=self.world.player_stats,
         )
         pg.display.flip()
 
