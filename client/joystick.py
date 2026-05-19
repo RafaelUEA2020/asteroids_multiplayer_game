@@ -21,14 +21,14 @@ Buttons:
   3   Start
   4   D-pad Up
   5   D-pad Right
-  6   D-pad Down
+  6   
   7   D-pad Left
   8   L2
   9   R2
   10  L1
   11  R1
-  12  Triangle
-  13  Circle
+  12  D-pad Left
+  13  D-pad Down
   14  Cross  (X)
   15  Square
 """
@@ -41,9 +41,9 @@ from core.commands import PlayerCommand
 AXIS_LX = 0   # left stick horizontal (rotate)
 
 # Button indices  — adjust here if your driver differs
-BTN_THRUST    = 12   # Triangle  → thrust
-BTN_SHOOT     = 14   # Cross     → shoot
-BTN_HYPERSPACE = 11  # R1        → hyperspace
+BTN_THRUST    = 0   # d-pad up  → thrust
+BTN_SHOOT     = 2   # square     → shoot
+BTN_HYPERSPACE = 10  # R1        → hyperspace
 
 # Dead-zone for analog sticks
 DEAD_ZONE = 0.25
