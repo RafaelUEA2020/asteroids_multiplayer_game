@@ -13,13 +13,27 @@ from client.renderer import Renderer
 from core.world import World
 
 
+class _NullAudio:
+    """No-op audio used when the mixer can't initialize (e.g. no audio device)."""
+
+    def play_events(self, events) -> None: ...
+    def update_thrust(self, active: bool) -> None: ...
+    def update_ufo_siren(self, ufos) -> None: ...
+    def stop_all(self) -> None: ...
+
+
 class Game:
     """Orchestrates input -> update -> draw."""
 
     def __init__(self) -> None:
         pg.mixer.pre_init(C.AUDIO_FREQUENCY, C.AUDIO_SIZE, C.AUDIO_CHANNELS, C.AUDIO_BUFFER)
         pg.init()
-        pg.mixer.init()
+        try:
+            pg.mixer.init()
+            self._audio_ok = True
+        except pg.error as exc:
+            print(f"[audio] mixer unavailable, running silent: {exc}")
+            self._audio_ok = False
 
         self.screen = pg.display.set_mode((C.WIDTH, C.HEIGHT))
         pg.display.set_caption("Asteroids — Co-op")
@@ -39,8 +53,12 @@ class Game:
         self.world = World()
         self.input_hub = InputHub()
 
-        self.sounds = load_sounds(C.SOUND_PATH)
-        self.audio = AudioManager(self.sounds)
+        if self._audio_ok:
+            self.sounds = load_sounds(C.SOUND_PATH)
+            self.audio = AudioManager(self.sounds)
+        else:
+            self.sounds = None
+            self.audio = _NullAudio()
 
     def run(self) -> None:
         while self.running:
